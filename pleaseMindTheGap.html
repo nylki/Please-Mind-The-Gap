@@ -104,18 +104,6 @@ function init(){
     shininess: 10
   });
 
-  boxmesh = new Physijs.BoxMesh( boxgeom, boxmaterial, 1 );
-  boxmesh.position.x = 0;
-  boxmesh.position.y = 10;
-  boxmesh.position.z = -6;
-  boxmesh.rotation.x = 0.4;
-  boxmesh.rotation.z = -0.7;
-  boxmesh.castShadow = true;
-  boxmesh.receiveShadow = true;
-  boxmesh.collisions = 1;
-  boxmesh.userData.category = "generic random box";
-  boxmesh.name = "starting box"
-  //scene.add( boxmesh );
 
 
   groundGeometry = new THREE.BoxGeometry( 50, 2, 50 );
@@ -128,12 +116,12 @@ function init(){
   ground.receiveShadow = true;
   ground.position.y = -2;
   ground.userData.category = "ground";
-
+  ground.addEventListener( 'collision', collision);
   scene.add( ground );
 
 
   spotLight = new THREE.SpotLight( 0xffffff );
-  spotLight.lookAt(boxmesh);
+  spotLight.lookAt(player);
   spotLight.position.set( 100, 50, 50 );
   spotLight.castShadow = true;
   spotLight.shadowMapWidth = 1024;
@@ -288,7 +276,7 @@ function createRandomObject(pos){
   randomMesh.receiveShadow = true;
   randomMesh.collisions = 1;
   randomMesh.userData.category = "generic random box";
-  randomMesh.addEventListener( 'collision', collision);
+  
 
   return randomMesh;
 }
@@ -333,6 +321,11 @@ function removePlatformsInShadow(){
 
 function collision( other_object, relative_velocity, relative_rotation, contact_normal ){
   console.log(this.userData.category + "collision detected. with: " + other_object.userData.category);
+  
+  if(this.userData.category == "ground" && other_object.userData.category != "player"){
+    console.log("hit ground");
+    scene.remove(other_object);
+  }
 
 }
 
