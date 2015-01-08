@@ -34,7 +34,7 @@ var perlin;
 var clock;
 
 var boxgeom, boxmesh, boxmaterial, groundGeometry, ground, groundMaterial;
-var directionalLight;
+var directionalLight1, directionalLight2;
 var activeMaterial;
 var artefacts = [];
 
@@ -76,56 +76,82 @@ function init(){
 
   scene = new Physijs.Scene;
   scene.setGravity(new THREE.Vector3( 0, -5, 0 ));
-  
-  directionalLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
-  directionalLight.position.set( 0, 1, 0 ); scene.add( directionalLight );
-  directionalLight.rotation.set(0.1, 0.2, 0.3);
 
-  player = new Physijs.BoxMesh( new THREE.CubeGeometry(2, 2, normalCameraHeight, 8 ), new THREE.MeshBasicMaterial({ color: 0x888888 }) );
+  directionalLight1 = new THREE.DirectionalLight( 0xdefdff, 0.8 );
+  directionalLight1.position.set( 0, 1, 0 );
+  directionalLight1.rotation.set(0.5, 0.9, 0.2);
+  scene.add( directionalLight1 );
+
+  directionalLight2 = new THREE.DirectionalLight( 0xdefdff, 0.3 );
+  directionalLight2.position.set( 0, -1, 0 );
+  directionalLight2.rotation.set(-0.1, 0.4, 0.7);
+  scene.add( directionalLight2 );
+
+  player = new Physijs.CapsuleMesh( new THREE.CylinderGeometry(1, 1, normalCameraHeight, 16 ), new THREE.MeshBasicMaterial({ color: 0x888888 }) );
   player.visible = false;
   player.userData.category = "player";
-  player.addEventListener( 'collision', collision);
   player.position.y = normalPlayerPosition;
 
 
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.2, 200);
-  camera.rotation.order = "YXZ"; // necessary to get proper camera rotation
+  camera.rotation.order = "YXZ"; // necessary to get prope camera rotation
   camera.position.set(0, normalCameraHeight, 0);
 
 
-  player.add( camera );
   scene.add( player );
-  
+  player.add( camera );
+
+
   // set angular factor to 0,0,0 to prevent tripping over of player
   player.setAngularFactor(new THREE.Vector3(0,0,0));
 
   activeObjectPicker = new THREE.Raycaster(player.position, camera.getWorldDirection());
+
+  // IDEA glowwy material, maybe some shaders or deforming shit
   activeMaterial = new THREE.MeshBasicMaterial({ color: 0xbc1a49 });
 
   boxgeom = new THREE.BoxGeometry( 2, 2, 2 );
   boxmaterial = new THREE.MeshLambertMaterial({
     ambient:0xee7b09,
-    color: 0x6adeb5,
+    color: 0x999999,
     specular: 0x009900,
     shininess: 10
   });
 
 
 
-  groundGeometry = new THREE.BoxGeometry( 200, 1, 200 );
-  groundMaterial = new THREE.MeshLambertMaterial( {color: 0xacaaaa, side: THREE.SingleSided} );
+  groundGeometry = new THREE.BoxGeometry( 500, 1, 500 );
+  groundMaterial = new THREE.MeshBasicMaterial( {color: 0xacaaaa, side: THREE.DoubleSided} );
   ground = new Physijs.BoxMesh(
     groundGeometry,
     groundMaterial,
     0 // mass
   );
   ground.receiveShadow = false;
-  ground.position.y = -10;
+  ground.visible = true;
+  ground.position.y = -20;
   ground.userData.category = "ground";
-  ground.addEventListener( 'collision', collision);
   scene.add( ground );
+  ground.addEventListener( 'collision', collision);
 
-  createPlatform();
+
+// create one platform for starting position
+  var platformPosition = new THREE.Vector3();
+  platformPosition.copy(player.position);
+  platformPosition.y -= 3;
+  createPlatform(platformPosition);
+
+// create two additional platforms
+for (var i = 0; i < 3; i++) {
+  var newPosition = new THREE.Vector3(
+    THREE.Math.randFloat(-5, -15),
+    THREE.Math.randFloat(5, 15),
+    THREE.Math.randFloat(-5, -15));
+    platformPosition.add(newPosition);
+
+    createPlatform(platformPosition);
+}
+
 
 
   clock = new THREE.Clock(true);
@@ -184,7 +210,7 @@ function look(){
 }
 
 function jump(){
-  player.applyCentralImpulse(new THREE.Vector3(0, 50, 0));
+  player.applyCentralImpulse(new THREE.Vector3(0, 45, 0));
 
 }
 
@@ -231,9 +257,19 @@ function makeSteps(){
 
 }
 
+function unfreeze(obj){
+  obj.setAngularFactor(new THREE.Vector3(1,1,1));
+  obj.setLinearFactor(new THREE.Vector3(1,1,1));
+}
+
+function freeze(obj){
+  obj.setAngularFactor(new THREE.Vector3(0,0,0));
+  obj.setLinearFactor(new THREE.Vector3(0,0,0));
+}
 function onDocumentMouseDown( event ) {
 console.log("mousedown");
   if(activeObject !== undefined){
+    unfreeze(activeObject);
     activeObject.applyCentralImpulse(new THREE.Vector3(0, 10, 0));
     if(activeObject.userData.category === "green"){
       // action green
@@ -273,7 +309,7 @@ function createRandomObject(pos){
   randomMesh.castShadow = false;
   randomMesh.receiveShadow = false;
   randomMesh.userData.category = "generic random box";
-  
+
 
   return randomMesh;
 }
@@ -289,7 +325,7 @@ function createObjectAtSight(){
   var newBox = createRandomObject(targetVector);
   // Enable CCD if the object moves more than 1 meter in one simulation frame
   newBox.setCcdMotionThreshold(1);
-  
+
   // Set the radius of the embedded sphere such that it is smaller than the object
   newBox.setCcdSweptSphereRadius(0.2);
 
@@ -299,22 +335,22 @@ function createObjectAtSight(){
 }
 
 function createRandomFallingObject(heigth_){
-  if(Math.random() * 300 < 1){
+  if(Math.random() * 150 < 1){
     var targetVector = new THREE.Vector3((Math.random() * 20) - 10, heigth_, (Math.random() * 20) - 10);
     var randomObject = createRandomObject(targetVector);
     randomObject.rotation.x = Math.random();
     randomObject.rotation.y = Math.random();
     randomObject.rotation.z = Math.random();
-    
+
     // Enable CCD if the object moves more than 1 meter in one simulation frame
     randomObject.setCcdMotionThreshold(1);
-    
+
     // Set the radius of the embedded sphere such that it is smaller than the object
     randomObject.setCcdSweptSphereRadius(0.2);
-    
+
     artefacts.push( randomObject );
     scene.add( randomObject );
-    
+
   }
 }
 
@@ -333,35 +369,37 @@ function removePlatformsInShadow(){
 function collision( other_object, relative_velocity, relative_rotation, contact_normal ){
   console.log("collision...");
   //console.log(this.userData.category + "collision detected. with: " + other_object.userData.category);
-  
-  /*if(this.userData.category == "ground" && other_object.userData.category != "player"){
+
+  if(this.userData.category == "ground" && other_object.userData.category != "player"){
     console.log("hit ground. remove it.");
     scene.remove(other_object);
-    other_object.geometry.dispose();
-  }*/
+    //other_object.geometry.dispose(); will remove geometry,
+    //bad for stuff with identical geometry like platforms
+    //
+  }
 
 }
 
-function createPlatform(){
-  var geometry = new THREE.BoxGeometry(2, 1, 2);
-  var margin = 1;
-  
-  // generate a field of boxes
-  for ( var z = 0; z < 15; z+=2 ) {
-    for ( var x = 0; x < 15; x+=2 ) {
-      var platformElement = new Physijs.BoxMesh( geometry, boxmaterial );
-      platformElement.position.set( x + margin, (normalPlayerPosition - 2) + THREE.Math.randFloat(-0.3, 0.3), z + margin );
-      platformElement.userData.category = "platform";
-      artefacts.push(platformElement);
+function createPlatform(pos){
+  var geometry = new THREE.BoxGeometry(1.5, 1, 1.5);
+  var margin = 0.1;
 
-      scene.add(platformElement);    
-      
-      // 
-      //FIXME: makes problem with collision callbacks for whole scene????
-      //
-      platformElement.setAngularFactor(new THREE.Vector3(0,0,0));
-      platformElement.setLinearFactor(new THREE.Vector3(0,0,0));
-      
+  // generate a field of boxes
+  for ( var z = -10; z < 10; z+=1.6 ) {
+    for ( var x = -10; x < 10; x+=1.6 ) {
+      var platformElement = new Physijs.BoxMesh( geometry, boxmaterial );
+
+
+
+      platformElement.position.set( x + margin, THREE.Math.randFloat(-0.3, 0.3), z + margin );
+      platformElement.position.add(pos);
+      platformElement.userData.category = "generic random box";
+      artefacts.push(platformElement);
+      player.__dirtyPosition = true;
+
+      scene.add(platformElement);
+      freeze(platformElement);
+
     }
   }
 }
