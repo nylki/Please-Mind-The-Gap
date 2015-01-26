@@ -6,29 +6,29 @@ var verticalMovement, horizontalMovement;
 var scene;
 
 var camera, player, activeObject, activeObjectPicker;
+var cursorSphere;
 var renderer;
 var moveForward, moveBackward, moveLeft, moveRight;
 var perlin;
 var clock;
+
+var color_gravitator = new THREE.Color();
+var color_creator = new THREE.Color();
+var color_normal = new THREE.Color();
 
 var boxgeom, boxmesh, material_standard, groundGeometry, ground, groundMaterial;
 var directionalLight1, directionalLight2;
 var activeMaterial, preActiveMaterial;
 var artefacts = [];
 
-var chanceGravity = 0.5;
-var chanceCreator = chanceCreator + 0.1;
+var chanceGravity = 0.2;
+var chanceCreator = chanceGravity + 0.2;
 var chanceStandard = 1.0 - chanceCreator;
 
 //-------------------------------------------------
 var normalCameraHeight = 2;
 var normalPlayerPosition = normalCameraHeight/2;
 //-------------------------------------------------
-
-/*
-TODO: Draw orientation bubble in the middle
-
-*/
 
 document.addEventListener( 'mousemove', onDocumentMouseMove, false );
 document.addEventListener( 'mousedown', onDocumentMouseDown, false );
@@ -56,6 +56,11 @@ function init(){
   renderer.shadowMapHeight = 1024;
   document.body.appendChild(renderer.domElement);
 
+  color_normal.setHSL(0.1, 0.1, 0.5);
+  color_creator.setHSL(0.2, 1.0, 0.5);
+  color_gravitator.setHSL(0.5, 1.0, 0.5);
+
+
   scene = new Physijs.Scene;
   scene.setGravity(new THREE.Vector3( 0, -5, 0 ));
 
@@ -75,9 +80,11 @@ function init(){
     new THREE.CylinderGeometry(1, 1, normalCameraHeight, 16 ),
     new THREE.MeshBasicMaterial({ color: 0x888888 })
   );
-  player.visible = false;
+  player.visible = true;
   player.userData.category = "player";
   player.position.y = normalPlayerPosition;
+
+
 
 
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.2, 200);
@@ -88,12 +95,29 @@ function init(){
   scene.add( player );
   player.add( camera );
 
+  //  'cursor' circle
+  var sphereMaterial = new THREE.MeshBasicMaterial( { color: 0x5555aa } );
+  var segments = 10;
+  var sphereGeometry =  new THREE.SphereGeometry( 0.05, 32, 32 );
+  cursorSphere = new THREE.Mesh( sphereGeometry, sphereMaterial );
+
+  cursorSphere.position.copy(camera.position);
+  cursorSphere.position.add(camera.getWorldDirection());
+  scene.add(cursorSphere);
+  player.add(cursorSphere);
+
+
+
+
+
 
   // set angular factor to 0,0,0 to prevent tripping over of player
   player.setAngularFactor(new THREE.Vector3(0,0,0));
 
-  activeObjectPicker = new THREE.Raycaster(player.position, camera.getWorldDirection());
-
+  var pickerPos = new THREE.Vector3();
+  pickerPos.copy(player.position);
+  //pickerPos.y -= 0.1;
+  activeObjectPicker = new THREE.Raycaster();
   // IDEA glowwy material, maybe some shaders or deforming shit
   activeMaterial = new THREE.MeshBasicMaterial({ color: 0xbc1a49 });
 
@@ -109,16 +133,16 @@ function init(){
 
   material_creator = new THREE.MeshLambertMaterial({
     side: THREE.DoubleSided,
-    ambient:0xee7b09,
-    color: 0xff0000,
-    specular: 0x009900,
+    ambient:0x1137bb,
+    color: color_creator,
+    specular: 0xfc92a7,
     shininess: 10
   });
 
   material_gravity = new THREE.MeshLambertMaterial({
     side: THREE.DoubleSided,
     ambient:0xee7b09,
-    color: 0x00ff00,
+    color: color_gravitator,
     specular: 0x009900,
     shininess: 10
   });
@@ -150,7 +174,7 @@ function init(){
   for (var i = 0; i < 1; i++) {
     var newPosition = new THREE.Vector3(
       THREE.Math.randFloat(-5, -15),
-      THREE.Math.randFloat(5, 15),
+      THREE.Math.randFloat(15, 30),
       THREE.Math.randFloat(-5, -15));
       platformPosition.add(newPosition);
 
@@ -189,13 +213,31 @@ function init(){
 
   // this is our draw loop. executed 60 times per second
   function render(){
-    createRandomFallingObject(5);
-    activeObjectPicker.set(player.position, camera.getWorldDirection());
+    // update crosshair
+    cursorSphere.position.copy(camera.position);
+    cursorSphere.position.add(camera.getWorldDirection());
+
+
+    createRandomFallingObject();
+
+    // update objects to to stuff with energy, also apply color by energy
+    for (var i = 0; i < artefacts.length; i++) {
+      //  console.log("energy: " + artefacts[i].userData.energy);
+        var curhsl = artefacts[i].material.color.getHSL();
+        artefacts[i].material.color.setHSL(curhsl.h, artefacts[i].userData.energy, curhsl.l)
+
+    }
+    var pickerPos = new THREE.Vector3();
+    pickerPos.addVectors(player.position, camera.position);
+    activeObjectPicker.set(pickerPos, camera.getWorldDirection());
+
     makeSteps();
     scene.simulate();
     requestAnimationFrame(render);
     renderer.render(scene, camera);
   }
+
+
 
   function look(){
     camera.rotation.x -= horizontalMovement * 0.002;
@@ -226,7 +268,8 @@ function init(){
           // loop all intersection and look for non platform objects
           for (var i = 0; i < intersections.length; i++) {
 
-            if(intersections[i].object.userData.category !== "platform"){
+            if(intersections[i].object.userData.category !== "platform" &&
+               intersections[i].object.userData.category !== "player"){
               activeObject = intersections[i].object;
               preActiveMaterial = activeObject.material;
               activeObject.material = activeMaterial;
@@ -302,6 +345,15 @@ function init(){
         obj.setLinearFactor(new THREE.Vector3(0,0,0));
       }
 
+      function randVector(min, max){
+        var v = new THREE.Vector3(
+          THREE.Math.randFloat(min, max),
+          THREE.Math.randFloat(min, max),
+          THREE.Math.randFloat(min, max)
+        );
+        return v;
+      }
+
 
       function onDocumentMouseDown( event ) {
 
@@ -319,6 +371,26 @@ function init(){
               }
             }
           } else if(activeObject.userData.category === "creator object"){
+            var n = THREE.Math.randInt(5,20);
+            for (var i = 0; i < n; i++) {
+              var pos = new THREE.Vector3();
+              pos.copy(activeObject.position);
+              pos.add(randVector(-5, 5));
+              var obj = createRandomObject();
+              initNewObject(obj, pos);
+
+
+              scene.add( obj );
+              if(Math.random() < 0.9){ freeze(obj);
+                obj.userData.category = "platform"; // create normal object
+
+              } else {
+                artefacts.push( obj );
+                obj.addEventListener( 'collision', collision);
+              }
+
+            }
+            scene.remove(activeObject);
             // action blue
           } else if(activeObject.userData.category === "standard object"){
             activeObject.applyCentralImpulse(camera.getWorldDirection().multiplyScalar(2));
@@ -340,47 +412,55 @@ function init(){
         look();
       }
 
-      function createRandomObject(pos){
+      function createRandomObject(){
 
         var obj;
         var r = THREE.Math.randFloat(0.0, 1.0);
 
         if(r <= chanceGravity) {
-          obj = createGravityObject();
+        //  console.log("create gravitator.");
+          obj = createGravityObject(Math.random());
         } else if(r <= chanceCreator){
-          obj = createCreatorObject();
+          //console.log("create creator.");
+          obj = createCreatorObject(Math.random());
         } else {
           obj = createStandardObject();
         }
 
-        obj.position.copy(pos);
-        obj.castShadow = false;
-        obj.receiveShadow = false;
-        obj.userData.mutationCount = 0;
+        if(obj.userData.energy == undefined) obj.userData.energy = 1.0;
 
         return obj;
       }
 
+      function initNewObject(obj, pos){
+        obj.position.copy(pos);
+        obj.castShadow = false;
+        obj.receiveShadow = false;
+        obj.userData.mutationCount = 0;
+      }
+
       function createStandardObject() {
         var boxGeometry = new THREE.BoxGeometry(  2, 2, 2, 6, 6, 6 );
-        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_standard, 1 );
+        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_standard.clone(), 1 );
         randomMesh.userData.category = "standard object";
+        randomMesh.userData.energy = 1.0;
         return randomMesh;
       }
 
       // TODO: strength of objects power by size and color saturation
-      function createGravityObject() {
+      function createGravityObject(energy) {
         var boxGeometry = new THREE.BoxGeometry(  2, 2, 2, 6, 6, 6 );
-        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_gravity, 1 );
+        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_gravity.clone(), 1 );
         randomMesh.userData.category = "gravity object";
+        randomMesh.userData.energy = energy;
         return randomMesh;
       }
-      
 
-      function createCreatorObject(pos) {
+      function createCreatorObject(energy) {
         var boxGeometry = new THREE.BoxGeometry(  2, 2, 2, 6, 6, 6 );
-        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_creator, 1 );
+        var randomMesh = new Physijs.ConvexMesh( boxGeometry, material_creator.clone(), 1 );
         randomMesh.userData.category = "creator object";
+        randomMesh.userData.energy = energy;
         return randomMesh;
       }
 
@@ -392,7 +472,8 @@ function init(){
         targetVector.add( camera.getWorldDirection().multiplyScalar( 10 ) );
         // now randomize coordinates in spherical boundary
 
-        var newBox = createRandomObject(targetVector);
+        var newBox = createRandomObject();
+        initNewObject(newBox, targetVector);
         // Enable CCD if the object moves more than 1 meter in one simulation frame
         newBox.setCcdMotionThreshold( 1 );
 
@@ -405,10 +486,13 @@ function init(){
         scene.add( newBox );
       }
 
-      function createRandomFallingObject(heigth_){
-        if( Math.random() * 50 < 1 ) {
-          var targetVector = new THREE.Vector3((Math.random() * 20) - 10, heigth_, ( Math.random() * 20 ) - 10 );
-          var randomObject = createRandomObject(targetVector);
+      function createRandomFallingObject(){
+        // TODO: instead of falling objects, grow them from the bottom
+        if( Math.random() * 100 < 1 ) {
+          var targetVector = new THREE.Vector3((Math.random() * 20) - 10, 5, ( Math.random() * 20 ) - 10 );
+          var randomObject = createRandomObject();
+          initNewObject(randomObject, targetVector);
+
           randomObject.rotation.x = Math.random();
           randomObject.rotation.y = Math.random();
           randomObject.rotation.z = Math.random();
@@ -455,7 +539,7 @@ function init(){
         } else if (this.userData.category != "ground" && this.userData.category != "player" &&
           !(this.userData.category == "platform" && other_object.userData.category == "platform") &&
           this.userData.mutationCount < 10){
-          console.log("mutate object: " + this.userData.category);
+          // console.log("mutate object: " + this.userData.category);
           mutateObject(this);
         }
 
@@ -482,7 +566,7 @@ function init(){
 
             platformElement.position.add(pos);
             platformElement.userData.category = "platform";
-            artefacts.push(platformElement);
+            //artefacts.push(platformElement);
             player.__dirtyPosition = true;
 
             scene.add(platformElement);
