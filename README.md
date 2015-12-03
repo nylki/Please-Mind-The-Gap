@@ -1,4 +1,4 @@
-# Please Mind The Gap (WIP)
+# Please Mind The Gap (ABANDONED)
 
 
 ## General Idea
